@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"reflect"
+
+	"github.com/kijudev/go-event-bus/typeid"
 )
 
 func a() string {
@@ -14,7 +15,7 @@ func b() string {
 }
 
 func main() {
-	va := reflect.ValueOf(a)
+	g := typeid.NewFuncGenerator()
 
-	fmt.Println(va.Addr())
+	fmt.Println("a: ", g.MustGenID(a), ", b: ", g.MustGenID(b), ", a: ", g.MustGenID(a))
 }

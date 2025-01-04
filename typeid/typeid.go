@@ -19,7 +19,9 @@ type FuncGenerator struct {
 }
 
 func NewFuncGenerator() *FuncGenerator {
-	return &FuncGenerator{}
+	return &FuncGenerator{
+		store: make(map[uintptr]uint64),
+	}
 }
 
 func (g *FuncGenerator) GenID(fn any) (uint64, error) {
@@ -49,6 +51,8 @@ func (g *FuncGenerator) GenID(fn any) (uint64, error) {
 		g.mutex.Unlock()
 		return id, nil
 	}
+
+	g.store[ptr] = id
 	g.mutex.Unlock()
 
 	return id, nil
