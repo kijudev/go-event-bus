@@ -1,6 +1,9 @@
 package evbus
 
-import "sync"
+import (
+	"reflect"
+	"sync"
+)
 
 type EmbededEventBus struct {
 	store  *eventBusStore
@@ -20,6 +23,8 @@ type eventBusStore struct {
 	guard chan struct{}
 	lock  sync.Mutex
 	wg    sync.WaitGroup
+
+	handlers map[EventTag](map[HandlerTag]reflect.Value)
 }
 
 func NewEmbededEventBus(maxGoroutines uint) *EmbededEventBus {
