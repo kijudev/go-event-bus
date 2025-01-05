@@ -118,6 +118,16 @@ func (bus *EventBus) MustSubscribe(handler any) HandlerTag {
 	return htag
 }
 
+func (bus *EventBus) Unsubscribe(htag HandlerTag) error {
+	return bus.store.unsubscribe(htag)
+}
+
+func (bus *EventBus) MustUnsubscribe(htag HandlerTag) {
+	if err := bus.store.unsubscribe(htag); err != nil {
+		panic(err)
+	}
+}
+
 func (bus *EventBus) Dispatch(ctx context.Context, ev any) error {
 	return bus.store.dispatchAsync(ctx, ev)
 }
@@ -154,6 +164,16 @@ func (sub *EventSubscriber) MustSubscribe(handler any) HandlerTag {
 	}
 
 	return htag
+}
+
+func (sub *EventSubscriber) Unsubscribe(htag HandlerTag) error {
+	return sub.store.unsubscribe(htag)
+}
+
+func (sub *EventSubscriber) MustUnsubscribe(htag HandlerTag) {
+	if err := sub.store.unsubscribe(htag); err != nil {
+		panic(err)
+	}
 }
 
 func (d *EventDispatcher) Dispatch(ctx context.Context, ev any) error {
@@ -244,6 +264,22 @@ func (s *store) subscribe(handler any) (HandlerTag, error) {
 	s.events[hevtag].handlers[htag] = struct{}{}
 
 	return htag, nil
+}
+
+func (s *store) unsubscribe(htag HandlerTag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	hdata := s.handlers[htag]
+	if !hdata.isSubscribed {
+		return ErrHandlerAlreadyUnsubscribed
+	}
+
+	hdata.isSubscribed = false
+	delete(s.events[hdata.evtag].handlers, htag)
+	s.handlers[htag] = hdata
+
+	return nil
 }
 
 func (s *store) dispatchAsync(ctx context.Context, ev any) error {
