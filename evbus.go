@@ -28,6 +28,8 @@ type EventDispatcher struct {
 	funcTypeidGenerator *typeid.FuncGenerator
 }
 
+type HandlerCmd struct{}
+
 type store struct {
 	guard chan struct{}
 	mu    sync.RWMutex
@@ -37,6 +39,8 @@ type store struct {
 	events   map[EventTag]storeEventData
 
 	funcTypeidGenerator *typeid.FuncGenerator
+
+	handlerCmd *HandlerCmd
 }
 
 type storeHandlerData struct {
@@ -63,6 +67,8 @@ func NewEventBus(maxGoroutines uint) *EventBus {
 		events:   make(map[EventTag]storeEventData),
 
 		funcTypeidGenerator: funcTypeidGenerator,
+
+		handlerCmd: &HandlerCmd{},
 	}
 
 	evbus := &EventBus{
@@ -146,6 +152,69 @@ func (sub *EventSubscriber) MustSubscribe(handler any) HandlerTag {
 	return htag
 }
 
+func (dispatcher *EventDispatcher) Dispatch(ctx context.Context, ev any) error {
+	evtag, evv, err := dispatcher.store.extractEvent(ev)
+	if err != nil {
+		return err
+	}
+
+	dispatcher.store.mu.RLock()
+
+	htags := dispatcher.store.events[evtag].handlers
+	var hvs []reflect.Value
+
+	for htag := range htags {
+		hv := dispatcher.store.handlers[htag].rvalue
+		hvs = append(hvs, hv)
+	}
+
+	dispatcher.store.mu.RUnlock()
+
+	for _, hv := range hvs {
+		err := dispatcher.store.runHandlerAsync(ctx, hv, evv)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *store) runHandlerAsync(ctx context.Context, hv reflect.Value, evv reflect.Value) error {
+	s.wg.Add(1)
+	s.guard <- struct{}{}
+
+	go func() {
+		hv.Call([]reflect.Value{
+			reflect.ValueOf(ctx),
+			evv,
+			reflect.ValueOf(s.handlerCmd),
+		})
+
+		s.wg.Done()
+		<-s.guard
+	}()
+
+	return nil
+}
+
+func (s *store) runHandlerSync(ctx context.Context, hv reflect.Value, evv reflect.Value) error {
+	s.wait()
+
+	hv.Call([]reflect.Value{
+		reflect.ValueOf(ctx),
+		evv,
+		reflect.ValueOf(s.handlerCmd),
+	})
+
+	return nil
+}
+
+func (s *store) wait() {
+	s.wg.Wait()
+}
+
 func (s *store) extractEvent(ev any) (EventTag, reflect.Value, error) {
 	evt := elemT(reflect.TypeOf(ev))
 	evv := elemV(reflect.ValueOf(ev))
@@ -181,7 +250,7 @@ func (s *store) extractHandler(handler any) (HandlerTag, EventTag, reflect.Value
 		return 0, evtag, hv, ErrHandlerInvalid
 	}
 
-	if ht.In(2) != reflect.TypeFor[EventDispatcher]() {
+	if ht.In(2) != reflect.TypeFor[*HandlerCmd]() {
 		return 0, evtag, hv, ErrHandlerInvalid
 	}
 
