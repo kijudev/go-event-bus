@@ -1,38 +1,167 @@
 package evbus
 
-import "context"
+import (
+	"context"
+	"errors"
+	"reflect"
+	"sync"
 
+	"github.com/kijudev/go-event-bus/typeid"
+)
+
+type EventTag reflect.Type
 type HandlerTag uint64
-type EventTag string
 
-type EventReader interface {
-	Subscribe(handler any) (HandlerTag, error)
-	MustSubscribe(handler any) HandlerTag
-
-	Resubscribe(htag HandlerTag) error
-	MustResubscribe(htag HandlerTag)
-
-	Unsubscribe(htag HandlerTag) error
-	MustUnsuscribe(htag HandlerTag)
+type EventBus struct {
+	store  *store
+	reader *EventReader
+	writer *EventWriter
 }
 
-type EventWriter interface {
-	Dispatch(ctx context.Context, event any) error
-	MustDipatch(ctx context.Context, event any)
-
-	DispatchSync(ctx context.Context, event any) error
-	MustDispatchSync(ctx context.Context, event any)
-
-	Wait(ctx context.Context)
+type EventReader struct {
+	store               *store
+	funcTypeidGenerator *typeid.FuncGenerator
 }
 
-type EventBus interface {
-	Reader() EventReader
-	Writer() EventWriter
+type EventWriter struct {
+	store               *store
+	funcTypeidGenerator *typeid.FuncGenerator
 }
 
-type Event interface {
-	Tag() EventTag
+type store struct {
+	guard chan struct{}
+	mu    sync.RWMutex
+	wg    sync.WaitGroup
+
+	handlers map[HandlerTag]storeHandlerData
+	events   map[EventTag]storeEventData
+
+	funcTypeidGenerator *typeid.FuncGenerator
 }
 
-const NullEvTag = EventTag("NULL")
+type storeHandlerData struct {
+	rvalue       reflect.Value
+	isSubscribed bool
+	evtag        EventTag
+}
+
+type storeEventData struct {
+	handlers map[HandlerTag]struct{}
+}
+
+func NewEventBus(maxGoroutines uint) *EventBus {
+	if maxGoroutines == 0 {
+		maxGoroutines = 1
+	}
+
+	funcTypeidGenerator := typeid.NewFuncGenerator()
+
+	store := &store{
+		guard: make(chan struct{}, maxGoroutines),
+
+		handlers: make(map[HandlerTag]storeHandlerData),
+		events:   make(map[EventTag]storeEventData),
+
+		funcTypeidGenerator: funcTypeidGenerator,
+	}
+
+	evbus := &EventBus{
+		store: store,
+		reader: &EventReader{
+			store:               store,
+			funcTypeidGenerator: funcTypeidGenerator,
+		},
+		writer: &EventWriter{
+			store:               store,
+			funcTypeidGenerator: funcTypeidGenerator,
+		},
+	}
+
+	return evbus
+}
+
+func (bus *EventBus) Reader() *EventReader {
+	return bus.reader
+}
+
+func (bus *EventBus) Writer() *EventWriter {
+	return bus.writer
+}
+
+func (s *store) extractEvent(ev any) (EventTag, reflect.Value, error) {
+	evt := elemT(reflect.TypeOf(ev))
+	evv := elemV(reflect.ValueOf(ev))
+
+	s.mu.RLock()
+	if _, ok := s.events[EventTag(evt)]; !ok {
+		s.mu.RUnlock()
+		return evt, evv, ErrEventNotRegistered
+	}
+	s.mu.RUnlock()
+
+	return evt, evv, nil
+}
+
+func (s *store) extractHandler(handler any) (HandlerTag, reflect.Value, error) {
+	ht := reflect.TypeOf(handler)
+	hv := reflect.ValueOf(handler)
+
+	if hv.IsNil() {
+		return 0, hv, ErrHandlerInvalid
+	}
+
+	if ht.Kind() != reflect.Func {
+		return 0, hv, ErrHandlerInvalid
+	}
+
+	if ht.NumIn() != 3 {
+		return 0, hv, ErrHandlerInvalid
+	}
+
+	if ht.In(0) != reflect.TypeFor[context.Context]() {
+		return 0, hv, ErrHandlerInvalid
+	}
+
+	if ht.In(2) != reflect.TypeFor[EventWriter]() {
+		return 0, hv, ErrHandlerInvalid
+	}
+
+	evt := ht.In(1)
+	if evt.Kind() == reflect.Ptr {
+		return 0, hv, ErrHandlerInvalidEventTag
+	}
+
+	evtag := EventTag(evt)
+
+	s.mu.RLock()
+	if _, ok := s.events[evtag]; !ok {
+		s.mu.RUnlock()
+		return 0, hv, ErrEventNotRegistered
+	}
+	s.mu.RUnlock()
+
+	genid, err := s.funcTypeidGenerator.GenID(handler)
+	if err != nil {
+		return 0, hv, errors.Join(ErrUnknown, err)
+	}
+
+	htag := HandlerTag(genid)
+
+	return htag, hv, nil
+}
+
+func elemV(v reflect.Value) reflect.Value {
+	if v.Kind() == reflect.Ptr {
+		return v.Elem()
+	}
+
+	return v
+}
+
+func elemT(t reflect.Type) reflect.Type {
+	if t.Kind() == reflect.Ptr {
+		return t.Elem()
+	}
+
+	return t
+}

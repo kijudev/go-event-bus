@@ -3,12 +3,14 @@ package evbus
 import "errors"
 
 var (
-	ErrEventNotRegisterd         = errors.New("EVENT_NOT_REGISTERED")
-	ErrInvalidEventHandler       = errors.New("INVALID_EVENT_HANDLER")
-	ErrInvalidEventHandlerArgs   = errors.New("INVALID_EVENT_HANDLER_ARGS")
-	ErrEventDoesNotImplementTag  = errors.New("EVENT_DOES_NOT_IMPLEMENT_TAG")
-	ErrInvalidHandlerTag         = errors.New("INVALID_HANDLER_TAG")
-	ErrHandlerAlreadySubscribed  = errors.New("HANDLER_ALREADY_SUBSCRIBED")
-	ErrHandlerAreadyUnsubscribed = errors.New("HANDLER_ALREADY_UNSUBSCRIBED")
-	ErrUnknown                   = errors.New("UNKNOWN")
+	ErrHandlerInvalid           = errors.New("HANDLER_INVALID")
+	ErrHandlerInvalidEventTag   = errors.New("HANDLER_INVALID_EVENT_TAG")
+	ErrHandlerNotRegistered     = errors.New("HANDLER_NOT_REGISTERED")
+	ErrHandlerAlreadyRegistered = errors.New("HANDLER_ALREADY_REGISTERED")
+
+	ErrEventInvalid           = errors.New("EVENT_INVALID")
+	ErrEventNotRegistered     = errors.New("EVENT_NOT_REGISTERED")
+	ErrEventAlreadyRegistered = errors.New("EVENT_ALREADY_REGISTERED")
+
+	ErrUnknown = errors.New("UNKNOWN")
 )
