@@ -202,8 +202,8 @@ func (d *EventDispatcher) Wait() {
 	d.store.wait()
 }
 
-func (cmd *Cmd) Dispatch(prevCtx context.Context, ev any) error {
-	nextCtx, err := cmd.pass(prevCtx, ev)
+func (cmd *Cmd) Dispatch(ctx context.Context, ev any) error {
+	nextCtx, err := cmd.pass(ctx, ev)
 	if err != nil {
 		return err
 	}
@@ -211,14 +211,14 @@ func (cmd *Cmd) Dispatch(prevCtx context.Context, ev any) error {
 	return cmd.store.dispatchAsync(nextCtx, ev)
 }
 
-func (cmd *Cmd) MustDispatch(prevCtx context.Context, ev any) {
-	if err := cmd.Dispatch(prevCtx, ev); err != nil {
+func (cmd *Cmd) MustDispatch(ctx context.Context, ev any) {
+	if err := cmd.Dispatch(ctx, ev); err != nil {
 		panic(err)
 	}
 }
 
-func (cmd *Cmd) DispatchBlocking(prevCtx context.Context, ev any) error {
-	nextCtx, err := cmd.pass(prevCtx, ev)
+func (cmd *Cmd) DispatchBlocking(ctx context.Context, ev any) error {
+	nextCtx, err := cmd.pass(ctx, ev)
 	if err != nil {
 		return err
 	}
@@ -226,8 +226,28 @@ func (cmd *Cmd) DispatchBlocking(prevCtx context.Context, ev any) error {
 	return cmd.store.dispatchSync(nextCtx, ev)
 }
 
-func (cmd *Cmd) MustDispatchBlocking(prevCtx context.Context, ev any) {
-	if err := cmd.DispatchBlocking(prevCtx, ev); err != nil {
+func (cmd *Cmd) MustDispatchBlocking(ctx context.Context, ev any) {
+	if err := cmd.DispatchBlocking(ctx, ev); err != nil {
+		panic(err)
+	}
+}
+
+func (cmd *Cmd) UnsafeDispatch(ctx context.Context, ev any) error {
+	return cmd.store.dispatchAsync(ctx, ev)
+}
+
+func (cmd *Cmd) UnsafeMustDispatch(ctx context.Context, ev any) {
+	if err := cmd.store.dispatchAsync(ctx, ev); err != nil {
+		panic(err)
+	}
+}
+
+func (cmd *Cmd) UnsafeDispatchBlocking(ctx context.Context, ev any) error {
+	return cmd.store.dispatchSync(ctx, ev)
+}
+
+func (cmd *Cmd) UnsafeMustDispatchBlocking(ctx context.Context, ev any) {
+	if err := cmd.store.dispatchSync(ctx, ev); err != nil {
 		panic(err)
 	}
 }
