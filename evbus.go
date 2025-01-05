@@ -35,8 +35,6 @@ type store struct {
 	events   map[EventTag]storeEventData
 
 	funcTypeidGenerator *typeid.FuncGenerator
-
-	handlerCmd *Cmd
 }
 
 type storeHandlerData struct {
@@ -69,10 +67,6 @@ func NewEventBus(maxGoroutines uint) *EventBus {
 		funcTypeidGenerator: funcTypeidGenerator,
 	}
 
-	store.handlerCmd = &Cmd{
-		store: store,
-	}
-
 	evbus := &EventBus{
 		store: store,
 		subscriber: &EventSubscriber{
@@ -84,6 +78,14 @@ func NewEventBus(maxGoroutines uint) *EventBus {
 	}
 
 	return evbus
+}
+
+const cmdTraceCtxKey = "EVBUS__CMD_TRACE"
+
+func newCmd(s *store) *Cmd {
+	return &Cmd{
+		store: s,
+	}
 }
 
 func (bus *EventBus) Subscriber() *EventSubscriber {
@@ -200,28 +202,63 @@ func (d *EventDispatcher) Wait() {
 	d.store.wait()
 }
 
-func (cmd *Cmd) Dispatch(ctx context.Context, ev any) error {
-	return cmd.store.dispatchAsync(ctx, ev)
+func (cmd *Cmd) Dispatch(prevCtx context.Context, ev any) error {
+	nextCtx, err := cmd.pass(prevCtx, ev)
+	if err != nil {
+		return err
+	}
+
+	return cmd.store.dispatchAsync(nextCtx, ev)
 }
 
-func (cmd *Cmd) MustDispatch(ctx context.Context, ev any) {
-	if err := cmd.store.dispatchAsync(ctx, ev); err != nil {
+func (cmd *Cmd) MustDispatch(prevCtx context.Context, ev any) {
+	if err := cmd.Dispatch(prevCtx, ev); err != nil {
 		panic(err)
 	}
 }
 
-func (cmd *Cmd) DispatchBlocking(ctx context.Context, ev any) error {
-	return cmd.store.dispatchSync(ctx, ev)
+func (cmd *Cmd) DispatchBlocking(prevCtx context.Context, ev any) error {
+	nextCtx, err := cmd.pass(prevCtx, ev)
+	if err != nil {
+		return err
+	}
+
+	return cmd.store.dispatchSync(nextCtx, ev)
 }
 
-func (cmd *Cmd) MustDispatchBlocking(ctx context.Context, ev any) {
-	if err := cmd.store.dispatchSync(ctx, ev); err != nil {
+func (cmd *Cmd) MustDispatchBlocking(prevCtx context.Context, ev any) {
+	if err := cmd.DispatchBlocking(prevCtx, ev); err != nil {
 		panic(err)
 	}
 }
 
 func (cmd *Cmd) Wait() {
 	cmd.store.wait()
+}
+
+// Returns an error if cmd.Dispatch call might couse an inifite loop
+func (cmd *Cmd) pass(ctx context.Context, ev any) (context.Context, error) {
+	evtag, _, err := cmd.store.extractEvent(ev)
+	if err != nil {
+		return ctx, err
+	}
+
+	v := ctx.Value(cmdTraceCtxKey)
+	if v == nil {
+		return context.WithValue(ctx, cmdTraceCtxKey, map[EventTag]struct{}{evtag: struct{}{}}), nil
+	}
+
+	trace, ok := v.(map[EventTag]struct{})
+	if !ok {
+		return ctx, ErrUnknown
+	}
+
+	if _, ok := trace[evtag]; ok {
+		return ctx, ErrCmdResursiveDispatchCall
+	}
+
+	trace[evtag] = struct{}{}
+	return context.WithValue(ctx, cmdTraceCtxKey, trace), nil
 }
 
 func (s *store) register(ev any) error {
@@ -348,7 +385,7 @@ func (s *store) runHandlerAsync(ctx context.Context, hv reflect.Value, evv refle
 		hv.Call([]reflect.Value{
 			reflect.ValueOf(ctx),
 			evv,
-			reflect.ValueOf(s.handlerCmd),
+			reflect.ValueOf(newCmd(s)),
 		})
 
 		s.wg.Done()
@@ -364,7 +401,7 @@ func (s *store) runHandlerSync(ctx context.Context, hv reflect.Value, evv reflec
 	hv.Call([]reflect.Value{
 		reflect.ValueOf(ctx),
 		evv,
-		reflect.ValueOf(s.handlerCmd),
+		reflect.ValueOf(newCmd(s)),
 	})
 
 	return nil

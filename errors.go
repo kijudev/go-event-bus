@@ -13,5 +13,7 @@ var (
 	ErrEventNotRegistered     = errors.New("EVENT_NOT_REGISTERED")
 	ErrEventAlreadyRegistered = errors.New("EVENT_ALREADY_REGISTERED")
 
+	ErrCmdResursiveDispatchCall = errors.New("CMD_RECURSIVE_DISPATCH_CALL")
+
 	ErrUnknown = errors.New("UNKNOWN")
 )
