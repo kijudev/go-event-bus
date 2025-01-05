@@ -19,16 +19,12 @@ type EventBus struct {
 }
 
 type EventSubscriber struct {
-	store               *store
-	funcTypeidGenerator *typeid.FuncGenerator
+	store *store
 }
 
 type EventDispatcher struct {
-	store               *store
-	funcTypeidGenerator *typeid.FuncGenerator
+	store *store
 }
-
-type HandlerCmd struct{}
 
 type store struct {
 	guard chan struct{}
@@ -53,6 +49,10 @@ type storeEventData struct {
 	handlers map[HandlerTag]struct{}
 }
 
+type HandlerCmd struct {
+	store *store
+}
+
 func NewEventBus(maxGoroutines uint) *EventBus {
 	if maxGoroutines == 0 {
 		maxGoroutines = 1
@@ -67,19 +67,19 @@ func NewEventBus(maxGoroutines uint) *EventBus {
 		events:   make(map[EventTag]storeEventData),
 
 		funcTypeidGenerator: funcTypeidGenerator,
+	}
 
-		handlerCmd: &HandlerCmd{},
+	store.handlerCmd = &HandlerCmd{
+		store: store,
 	}
 
 	evbus := &EventBus{
 		store: store,
 		subscriber: &EventSubscriber{
-			store:               store,
-			funcTypeidGenerator: funcTypeidGenerator,
+			store: store,
 		},
 		dispatcher: &EventDispatcher{
-			store:               store,
-			funcTypeidGenerator: funcTypeidGenerator,
+			store: store,
 		},
 	}
 
@@ -94,88 +94,72 @@ func (bus *EventBus) Dispatcher() *EventDispatcher {
 	return bus.dispatcher
 }
 
-func (bus *EventBus) Register(ev any) error {
+func (bus *EventBus) Wait() {
+	bus.store.wait()
+}
+
+func (s *store) register(ev any) error {
 	evt := elemT(reflect.TypeOf(ev))
 	evtag := EventTag(evt)
 
-	bus.store.mu.Lock()
-	defer bus.store.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if _, ok := bus.store.events[evtag]; ok {
+	if _, ok := s.events[evtag]; ok {
 		return ErrEventAlreadyRegistered
 	}
 
-	bus.store.events[evtag] = storeEventData{
+	s.events[evtag] = storeEventData{
 		handlers: make(map[HandlerTag]struct{}),
 	}
 
 	return nil
 }
 
-func (bus *EventBus) MustRegister(ev any) {
-	if err := bus.Register(ev); err != nil {
-		panic(err)
-	}
-}
-
-func (bus *EventBus) Wait() {
-	bus.store.wait()
-}
-
-func (sub *EventSubscriber) Subscribe(handler any) (HandlerTag, error) {
-	htag, hevtag, hv, err := sub.store.extractHandler(handler)
+func (s *store) subscribe(handler any) (HandlerTag, error) {
+	htag, hevtag, hv, err := s.extractHandler(handler)
 	if err != nil {
 		return htag, err
 	}
 
-	sub.store.mu.Lock()
-	defer sub.store.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if _, ok := sub.store.handlers[htag]; ok {
+	if _, ok := s.handlers[htag]; ok {
 		return htag, ErrHandlerAlreadyRegistered
 	}
 
-	sub.store.handlers[htag] = storeHandlerData{
+	s.handlers[htag] = storeHandlerData{
 		rvalue:       hv,
 		isSubscribed: true,
 		evtag:        hevtag,
 	}
 
-	sub.store.events[hevtag].handlers[htag] = struct{}{}
+	s.events[hevtag].handlers[htag] = struct{}{}
 
 	return htag, nil
 }
 
-func (sub *EventSubscriber) MustSubscribe(handler any) HandlerTag {
-	htag, err := sub.Subscribe(handler)
-
-	if err != nil {
-		panic(err)
-	}
-
-	return htag
-}
-
-func (dispatcher *EventDispatcher) Dispatch(ctx context.Context, ev any) error {
-	evtag, evv, err := dispatcher.store.extractEvent(ev)
+func (s *store) dispatch(ctx context.Context, ev any) error {
+	evtag, evv, err := s.extractEvent(ev)
 	if err != nil {
 		return err
 	}
 
-	dispatcher.store.mu.RLock()
+	s.mu.RLock()
 
-	htags := dispatcher.store.events[evtag].handlers
+	htags := s.events[evtag].handlers
 	var hvs []reflect.Value
 
 	for htag := range htags {
-		hv := dispatcher.store.handlers[htag].rvalue
+		hv := s.handlers[htag].rvalue
 		hvs = append(hvs, hv)
 	}
 
-	dispatcher.store.mu.RUnlock()
+	s.mu.RUnlock()
 
 	for _, hv := range hvs {
-		err := dispatcher.store.runHandlerAsync(ctx, hv, evv)
+		err := s.runHandlerAsync(ctx, hv, evv)
 
 		if err != nil {
 			return err
@@ -183,12 +167,6 @@ func (dispatcher *EventDispatcher) Dispatch(ctx context.Context, ev any) error {
 	}
 
 	return nil
-}
-
-func (dispatcher *EventDispatcher) MustDispatch(ctx context.Context, ev any) {
-	if err := dispatcher.Dispatch(ctx, ev); err != nil {
-		panic(err)
-	}
 }
 
 func (s *store) runHandlerAsync(ctx context.Context, hv reflect.Value, evv reflect.Value) error {
