@@ -29,18 +29,28 @@ type eventBusStore struct {
 	mu    sync.RWMutex
 	wg    sync.WaitGroup
 
-	registry map[EventTag]struct{}
-	handlers map[EventTag](map[HandlerTag]reflect.Value)
+	events              map[EventTag]struct{}
+	handlers            map[HandlerTag]handlerData
+	eventsToHandlerTags map[EventTag](map[HandlerTag]struct{})
+}
+
+type handlerData struct {
+	fn           reflect.Value
+	isSubscribed bool
+	evtag        EventTag
+	htag         HandlerTag
 }
 
 func NewEmbededEventBus(maxGoroutines uint) *EmbededEventBus {
 	store := &eventBusStore{
-		guard:    make(chan struct{}, maxGoroutines),
-		registry: make(map[EventTag]struct{}),
-		handlers: make(map[EventTag]map[HandlerTag]reflect.Value),
+		guard: make(chan struct{}, maxGoroutines),
+
+		events:              make(map[EventTag]struct{}),
+		handlers:            make(map[HandlerTag]handlerData),
+		eventsToHandlerTags: make(map[EventTag]map[HandlerTag]struct{}),
 	}
 
-	return &EmbededEventBus{
+	evbus := &EmbededEventBus{
 		store: store,
 		reader: &EmbededEventReader{
 			store:         store,
@@ -50,6 +60,10 @@ func NewEmbededEventBus(maxGoroutines uint) *EmbededEventBus {
 			store: store,
 		},
 	}
+
+	// Don't forget to register the null event
+
+	return evbus
 }
 
 func (reader *EmbededEventReader) Subscribe(handler any) (HandlerTag, error) {
@@ -87,12 +101,9 @@ func (reader *EmbededEventReader) Subscribe(handler any) (HandlerTag, error) {
 
 	reader.store.mu.Lock()
 	defer reader.store.mu.Unlock()
-	if _, ok := reader.store.handlers[evtag]; !ok {
-		return 0, ErrEventNotRegisterd
-	}
 
-	if reader.store.handlers[evtag] == nil {
-		reader.store.handlers[evtag] = make(map[HandlerTag]reflect.Value)
+	if _, ok := reader.store.events[evtag]; !ok {
+		return 0, ErrEventNotRegisterd
 	}
 
 	htaguint, err := reader.funcTypeidGen.GenID(handler)
@@ -101,7 +112,17 @@ func (reader *EmbededEventReader) Subscribe(handler any) (HandlerTag, error) {
 	}
 
 	htag := HandlerTag(htaguint)
-	reader.store.handlers[evtag][htag] = hv
+	if _, ok := reader.store.handlers[htag]; ok {
+		return 0, ErrHandlerAlreadySubscribed
+	}
+
+	reader.store.handlers[htag] = handlerData{
+		fn:           hv,
+		isSubscribed: true,
+		evtag:        evtag,
+		htag:         htag,
+	}
+	reader.store.eventsToHandlerTags[evtag][htag] = struct{}{}
 
 	return htag, nil
 }
@@ -114,4 +135,26 @@ func (reader *EmbededEventReader) MustSubscribe(handler any) HandlerTag {
 	}
 
 	return t
+}
+
+func (reader *EmbededEventReader) Unsubscribe(htag HandlerTag) error {
+	reader.store.mu.Lock()
+	defer reader.store.mu.Unlock()
+
+	if _, ok := reader.store.handlers[htag]; !ok {
+		return ErrInvalidHandlerTag
+	}
+
+	hdata := reader.store.handlers[htag]
+	if !hdata.isSubscribed {
+		return ErrHandlerAreadyUnsubscribed
+	}
+
+	delete(reader.store.eventsToHandlerTags[hdata.evtag], hdata.htag)
+	hdata.isSubscribed = false
+	hdata.evtag = NullEvTag
+
+	reader.store.handlers[htag] = hdata
+
+	return nil
 }

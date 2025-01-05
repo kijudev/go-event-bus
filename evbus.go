@@ -9,8 +9,11 @@ type EventReader interface {
 	Subscribe(handler any) (HandlerTag, error)
 	MustSubscribe(handler any) HandlerTag
 
-	Unsubscribe(handlerTag string) error
-	MustUnsuscribe(HandlerTag string)
+	Resubscribe(htag HandlerTag) error
+	MustResubscribe(htag HandlerTag)
+
+	Unsubscribe(htag HandlerTag) error
+	MustUnsuscribe(htag HandlerTag)
 }
 
 type EventWriter interface {
@@ -31,3 +34,5 @@ type EventBus interface {
 type Event interface {
 	Tag() EventTag
 }
+
+const NullEvTag = EventTag("NULL")
