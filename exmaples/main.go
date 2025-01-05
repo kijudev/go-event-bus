@@ -29,7 +29,11 @@ func main() {
 
 	ctx := context.Background()
 
-	bus.Dispatcher().MustDispatch(ctx, EventC(1.2))
+	bus.Dispatcher().MustDispatch(ctx, EventA(1))
+	bus.Dispatcher().MustDispatch(ctx, EventA(2))
+	bus.Dispatcher().MustDispatch(ctx, EventA(3))
+	bus.Dispatcher().MustDispatch(ctx, EventA(4))
+	bus.Dispatcher().MustDispatch(ctx, EventA(5))
 
 	bus.Wait()
 }

@@ -119,11 +119,21 @@ func (bus *EventBus) MustSubscribe(handler any) HandlerTag {
 }
 
 func (bus *EventBus) Dispatch(ctx context.Context, ev any) error {
-	return bus.store.dispatch(ctx, ev)
+	return bus.store.dispatchAsync(ctx, ev)
 }
 
 func (bus *EventBus) MustDispatch(ctx context.Context, ev any) {
-	if err := bus.store.dispatch(ctx, ev); err != nil {
+	if err := bus.store.dispatchAsync(ctx, ev); err != nil {
+		panic(err)
+	}
+}
+
+func (bus *EventBus) DispatchBlocking(ctx context.Context, ev any) error {
+	return bus.store.dispatchSync(ctx, ev)
+}
+
+func (bus *EventBus) MustDispatchBlocking(ctx context.Context, ev any) {
+	if err := bus.store.dispatchSync(ctx, ev); err != nil {
 		panic(err)
 	}
 }
@@ -147,11 +157,21 @@ func (sub *EventSubscriber) MustSubscribe(handler any) HandlerTag {
 }
 
 func (d *EventDispatcher) Dispatch(ctx context.Context, ev any) error {
-	return d.store.dispatch(ctx, ev)
+	return d.store.dispatchAsync(ctx, ev)
 }
 
 func (d *EventDispatcher) MustDispatch(ctx context.Context, ev any) {
-	if err := d.store.dispatch(ctx, ev); err != nil {
+	if err := d.store.dispatchAsync(ctx, ev); err != nil {
+		panic(err)
+	}
+}
+
+func (d *EventDispatcher) DispatchBlocking(ctx context.Context, ev any) error {
+	return d.store.dispatchSync(ctx, ev)
+}
+
+func (d *EventDispatcher) MustDispatchBlocking(ctx context.Context, ev any) {
+	if err := d.store.dispatchSync(ctx, ev); err != nil {
 		panic(err)
 	}
 }
@@ -202,7 +222,7 @@ func (s *store) subscribe(handler any) (HandlerTag, error) {
 	return htag, nil
 }
 
-func (s *store) dispatch(ctx context.Context, ev any) error {
+func (s *store) dispatchAsync(ctx context.Context, ev any) error {
 	evtag, evv, err := s.extractEvent(ev)
 	if err != nil {
 		return err
@@ -222,6 +242,35 @@ func (s *store) dispatch(ctx context.Context, ev any) error {
 
 	for _, hv := range hvs {
 		err := s.runHandlerAsync(ctx, hv, evv)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *store) dispatchSync(ctx context.Context, ev any) error {
+	evtag, evv, err := s.extractEvent(ev)
+	if err != nil {
+		return err
+	}
+
+	s.mu.RLock()
+
+	htags := s.events[evtag].handlers
+	var hvs []reflect.Value
+
+	for htag := range htags {
+		hv := s.handlers[htag].rvalue
+		hvs = append(hvs, hv)
+	}
+
+	s.mu.RUnlock()
+
+	for _, hv := range hvs {
+		err := s.runHandlerSync(ctx, hv, evv)
 
 		if err != nil {
 			return err
