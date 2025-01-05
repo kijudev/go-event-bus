@@ -86,11 +86,11 @@ func NewEventBus(maxGoroutines uint) *EventBus {
 	return evbus
 }
 
-func (bus *EventBus) Reader() *EventSubscriber {
+func (bus *EventBus) Subscriber() *EventSubscriber {
 	return bus.subscriber
 }
 
-func (bus *EventBus) Writer() *EventDispatcher {
+func (bus *EventBus) Dispatcher() *EventDispatcher {
 	return bus.dispatcher
 }
 
@@ -116,6 +116,10 @@ func (bus *EventBus) MustRegister(ev any) {
 	if err := bus.Register(ev); err != nil {
 		panic(err)
 	}
+}
+
+func (bus *EventBus) Wait() {
+	bus.store.wait()
 }
 
 func (sub *EventSubscriber) Subscribe(handler any) (HandlerTag, error) {
@@ -179,6 +183,12 @@ func (dispatcher *EventDispatcher) Dispatch(ctx context.Context, ev any) error {
 	}
 
 	return nil
+}
+
+func (dispatcher *EventDispatcher) MustDispatch(ctx context.Context, ev any) {
+	if err := dispatcher.Dispatch(ctx, ev); err != nil {
+		panic(err)
+	}
 }
 
 func (s *store) runHandlerAsync(ctx context.Context, hv reflect.Value, evv reflect.Value) error {

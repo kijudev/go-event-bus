@@ -1,21 +1,35 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/kijudev/go-event-bus/typeid"
+	evbus "github.com/kijudev/go-event-bus"
 )
 
-func a() string {
-	return "a"
-}
-
-func b() string {
-	return "b"
-}
+type EventA int
+type EventB string
+type EventC float32
 
 func main() {
-	g := typeid.NewFuncGenerator()
+	bus := evbus.NewEventBus(100)
 
-	fmt.Println("a: ", g.MustGenID(a), ", b: ", g.MustGenID(b), ", a: ", g.MustGenID(a))
+	bus.MustRegister(new(EventA))
+	bus.MustRegister(new(EventB))
+
+	h1 := bus.Subscriber().MustSubscribe(func(ctx context.Context, event EventA, cmd *evbus.HandlerCmd) {
+		fmt.Println("A: ", int(event))
+	})
+
+	h2 := bus.Subscriber().MustSubscribe(func(ctx context.Context, event EventB, cmd *evbus.HandlerCmd) {
+		fmt.Println("B: ", string(event))
+	})
+
+	fmt.Println(h1, h2)
+
+	ctx := context.Background()
+
+	bus.Dispatcher().MustDispatch(ctx, EventC(1.2))
+
+	bus.Wait()
 }
