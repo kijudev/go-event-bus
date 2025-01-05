@@ -17,11 +17,11 @@ func main() {
 	bus.MustRegister(new(EventA))
 	bus.MustRegister(new(EventB))
 
-	h1 := bus.Subscriber().MustSubscribe(func(ctx context.Context, event EventA, cmd *evbus.HandlerCmd) {
+	h1 := bus.Subscriber().MustSubscribe(func(ctx context.Context, event EventA, cmd *evbus.Cmd) {
 		fmt.Println("A: ", int(event))
 	})
 
-	h2 := bus.Subscriber().MustSubscribe(func(ctx context.Context, event EventB, cmd *evbus.HandlerCmd) {
+	h2 := bus.Subscriber().MustSubscribe(func(ctx context.Context, event EventB, cmd *evbus.Cmd) {
 		fmt.Println("B: ", string(event))
 	})
 

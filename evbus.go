@@ -36,7 +36,7 @@ type store struct {
 
 	funcTypeidGenerator *typeid.FuncGenerator
 
-	handlerCmd *HandlerCmd
+	handlerCmd *Cmd
 }
 
 type storeHandlerData struct {
@@ -49,7 +49,7 @@ type storeEventData struct {
 	handlers map[HandlerTag]struct{}
 }
 
-type HandlerCmd struct {
+type Cmd struct {
 	store *store
 }
 
@@ -69,7 +69,7 @@ func NewEventBus(maxGoroutines uint) *EventBus {
 		funcTypeidGenerator: funcTypeidGenerator,
 	}
 
-	store.handlerCmd = &HandlerCmd{
+	store.handlerCmd = &Cmd{
 		store: store,
 	}
 
@@ -178,6 +178,30 @@ func (d *EventDispatcher) MustDispatchBlocking(ctx context.Context, ev any) {
 
 func (d *EventDispatcher) Wait() {
 	d.store.wait()
+}
+
+func (cmd *Cmd) Dispatch(ctx context.Context, ev any) error {
+	return cmd.store.dispatchAsync(ctx, ev)
+}
+
+func (cmd *Cmd) MustDispatch(ctx context.Context, ev any) {
+	if err := cmd.store.dispatchAsync(ctx, ev); err != nil {
+		panic(err)
+	}
+}
+
+func (cmd *Cmd) DispatchBlocking(ctx context.Context, ev any) error {
+	return cmd.store.dispatchSync(ctx, ev)
+}
+
+func (cmd *Cmd) MustDispatchBlocking(ctx context.Context, ev any) {
+	if err := cmd.store.dispatchSync(ctx, ev); err != nil {
+		panic(err)
+	}
+}
+
+func (cmd *Cmd) Wait() {
+	cmd.store.wait()
 }
 
 func (s *store) register(ev any) error {
@@ -349,7 +373,7 @@ func (s *store) extractHandler(handler any) (HandlerTag, EventTag, reflect.Value
 		return 0, evtag, hv, ErrHandlerInvalid
 	}
 
-	if ht.In(2) != reflect.TypeFor[*HandlerCmd]() {
+	if ht.In(2) != reflect.TypeFor[*Cmd]() {
 		return 0, evtag, hv, ErrHandlerInvalid
 	}
 
