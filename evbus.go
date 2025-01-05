@@ -94,8 +94,70 @@ func (bus *EventBus) Dispatcher() *EventDispatcher {
 	return bus.dispatcher
 }
 
+func (bus *EventBus) Register(ev any) error {
+	return bus.store.register(ev)
+}
+
+func (bus *EventBus) MustRegister(ev any) {
+	if err := bus.store.register(ev); err != nil {
+		panic(err)
+	}
+}
+
+func (bus *EventBus) Subscribe(handler any) (HandlerTag, error) {
+	return bus.store.subscribe(handler)
+}
+
+func (bus *EventBus) MustSubscribe(handler any) HandlerTag {
+	htag, err := bus.store.subscribe(handler)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return htag
+}
+
+func (bus *EventBus) Dispatch(ctx context.Context, ev any) error {
+	return bus.store.dispatch(ctx, ev)
+}
+
+func (bus *EventBus) MustDispatch(ctx context.Context, ev any) {
+	if err := bus.store.dispatch(ctx, ev); err != nil {
+		panic(err)
+	}
+}
+
 func (bus *EventBus) Wait() {
 	bus.store.wait()
+}
+
+func (sub *EventSubscriber) Subscribe(handler any) (HandlerTag, error) {
+	return sub.store.subscribe(handler)
+}
+
+func (sub *EventSubscriber) MustSubscribe(handler any) HandlerTag {
+	htag, err := sub.store.subscribe(handler)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return htag
+}
+
+func (d *EventDispatcher) Dispatch(ctx context.Context, ev any) error {
+	return d.store.dispatch(ctx, ev)
+}
+
+func (d *EventDispatcher) MustDispatch(ctx context.Context, ev any) {
+	if err := d.store.dispatch(ctx, ev); err != nil {
+		panic(err)
+	}
+}
+
+func (d *EventDispatcher) Wait() {
+	d.store.wait()
 }
 
 func (s *store) register(ev any) error {
