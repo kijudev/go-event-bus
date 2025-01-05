@@ -17,23 +17,15 @@ func main() {
 	bus.MustRegister(new(EventA))
 	bus.MustRegister(new(EventB))
 
-	h1 := bus.Subscriber().MustSubscribe(func(ctx context.Context, event EventA, cmd *evbus.Cmd) {
+	_ = bus.Subscriber().MustSubscribe(func(ctx context.Context, event EventA, cmd *evbus.Cmd) {
 		fmt.Println("A: ", int(event))
-	})
 
-	h2 := bus.Subscriber().MustSubscribe(func(ctx context.Context, event EventB, cmd *evbus.Cmd) {
-		fmt.Println("B: ", string(event))
+		cmd.MustDispatch(ctx, EventA(2))
 	})
-
-	fmt.Println(h1, h2)
 
 	ctx := context.Background()
 
 	bus.Dispatcher().MustDispatch(ctx, EventA(1))
-	bus.Dispatcher().MustDispatch(ctx, EventA(2))
-	bus.Dispatcher().MustDispatch(ctx, EventA(3))
-	bus.Dispatcher().MustDispatch(ctx, EventA(4))
-	bus.Dispatcher().MustDispatch(ctx, EventA(5))
 
 	bus.Wait()
 }
