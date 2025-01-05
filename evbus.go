@@ -2,7 +2,7 @@ package evbus
 
 import "context"
 
-type HandlerTag string
+type HandlerTag uint64
 type EventTag string
 
 type EventReader interface {
@@ -29,5 +29,5 @@ type EventBus interface {
 }
 
 type Event interface {
-	Tag() string
+	Tag() EventTag
 }
