@@ -13,17 +13,17 @@ type EventTag reflect.Type
 type HandlerTag uint64
 
 type EventBus struct {
-	store  *store
-	reader *EventReader
-	writer *EventWriter
+	store      *store
+	subscriber *EventSubscriber
+	dispatcher *EventDispatcher
 }
 
-type EventReader struct {
+type EventSubscriber struct {
 	store               *store
 	funcTypeidGenerator *typeid.FuncGenerator
 }
 
-type EventWriter struct {
+type EventDispatcher struct {
 	store               *store
 	funcTypeidGenerator *typeid.FuncGenerator
 }
@@ -67,11 +67,11 @@ func NewEventBus(maxGoroutines uint) *EventBus {
 
 	evbus := &EventBus{
 		store: store,
-		reader: &EventReader{
+		subscriber: &EventSubscriber{
 			store:               store,
 			funcTypeidGenerator: funcTypeidGenerator,
 		},
-		writer: &EventWriter{
+		dispatcher: &EventDispatcher{
 			store:               store,
 			funcTypeidGenerator: funcTypeidGenerator,
 		},
@@ -80,12 +80,12 @@ func NewEventBus(maxGoroutines uint) *EventBus {
 	return evbus
 }
 
-func (bus *EventBus) Reader() *EventReader {
-	return bus.reader
+func (bus *EventBus) Reader() *EventSubscriber {
+	return bus.subscriber
 }
 
-func (bus *EventBus) Writer() *EventWriter {
-	return bus.writer
+func (bus *EventBus) Writer() *EventDispatcher {
+	return bus.dispatcher
 }
 
 func (bus *EventBus) Register(ev any) error {
@@ -146,7 +146,7 @@ func (s *store) extractHandler(handler any) (HandlerTag, reflect.Value, error) {
 		return 0, hv, ErrHandlerInvalid
 	}
 
-	if ht.In(2) != reflect.TypeFor[EventWriter]() {
+	if ht.In(2) != reflect.TypeFor[EventDispatcher]() {
 		return 0, hv, ErrHandlerInvalid
 	}
 
