@@ -112,6 +112,40 @@ func (bus *EventBus) MustRegister(ev any) {
 	}
 }
 
+func (sub *EventSubscriber) Subscribe(handler any) (HandlerTag, error) {
+	htag, hevtag, hv, err := sub.store.extractHandler(handler)
+	if err != nil {
+		return htag, err
+	}
+
+	sub.store.mu.Lock()
+	defer sub.store.mu.Unlock()
+
+	if _, ok := sub.store.handlers[htag]; ok {
+		return htag, ErrHandlerAlreadyRegistered
+	}
+
+	sub.store.handlers[htag] = storeHandlerData{
+		rvalue:       hv,
+		isSubscribed: true,
+		evtag:        hevtag,
+	}
+
+	sub.store.events[hevtag].handlers[htag] = struct{}{}
+
+	return htag, nil
+}
+
+func (sub *EventSubscriber) MustSubscribe(handler any) HandlerTag {
+	htag, err := sub.Subscribe(handler)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return htag
+}
+
 func (s *store) extractEvent(ev any) (EventTag, reflect.Value, error) {
 	evt := elemT(reflect.TypeOf(ev))
 	evv := elemV(reflect.ValueOf(ev))
@@ -126,52 +160,53 @@ func (s *store) extractEvent(ev any) (EventTag, reflect.Value, error) {
 	return evt, evv, nil
 }
 
-func (s *store) extractHandler(handler any) (HandlerTag, reflect.Value, error) {
+func (s *store) extractHandler(handler any) (HandlerTag, EventTag, reflect.Value, error) {
 	ht := reflect.TypeOf(handler)
 	hv := reflect.ValueOf(handler)
+	evtag := EventTag(reflect.TypeOf(nil))
 
 	if hv.IsNil() {
-		return 0, hv, ErrHandlerInvalid
+		return 0, evtag, hv, ErrHandlerInvalid
 	}
 
 	if ht.Kind() != reflect.Func {
-		return 0, hv, ErrHandlerInvalid
+		return 0, evtag, hv, ErrHandlerInvalid
 	}
 
 	if ht.NumIn() != 3 {
-		return 0, hv, ErrHandlerInvalid
+		return 0, evtag, hv, ErrHandlerInvalid
 	}
 
 	if ht.In(0) != reflect.TypeFor[context.Context]() {
-		return 0, hv, ErrHandlerInvalid
+		return 0, evtag, hv, ErrHandlerInvalid
 	}
 
 	if ht.In(2) != reflect.TypeFor[EventDispatcher]() {
-		return 0, hv, ErrHandlerInvalid
+		return 0, evtag, hv, ErrHandlerInvalid
 	}
 
 	evt := ht.In(1)
 	if evt.Kind() == reflect.Ptr {
-		return 0, hv, ErrHandlerInvalidEventTag
+		return 0, evtag, hv, ErrHandlerInvalidEventTag
 	}
 
-	evtag := EventTag(evt)
+	evtag = EventTag(evt)
 
 	s.mu.RLock()
 	if _, ok := s.events[evtag]; !ok {
 		s.mu.RUnlock()
-		return 0, hv, ErrEventNotRegistered
+		return 0, evtag, hv, ErrEventNotRegistered
 	}
 	s.mu.RUnlock()
 
 	genid, err := s.funcTypeidGenerator.GenID(handler)
 	if err != nil {
-		return 0, hv, errors.Join(ErrUnknown, err)
+		return 0, evtag, hv, errors.Join(ErrUnknown, err)
 	}
 
 	htag := HandlerTag(genid)
 
-	return htag, hv, nil
+	return htag, evtag, hv, nil
 }
 
 func elemV(v reflect.Value) reflect.Value {
