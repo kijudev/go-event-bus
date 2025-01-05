@@ -88,6 +88,30 @@ func (bus *EventBus) Writer() *EventWriter {
 	return bus.writer
 }
 
+func (bus *EventBus) Register(ev any) error {
+	evt := elemT(reflect.TypeOf(ev))
+	evtag := EventTag(evt)
+
+	bus.store.mu.Lock()
+	defer bus.store.mu.Unlock()
+
+	if _, ok := bus.store.events[evtag]; ok {
+		return ErrEventAlreadyRegistered
+	}
+
+	bus.store.events[evtag] = storeEventData{
+		handlers: make(map[HandlerTag]struct{}),
+	}
+
+	return nil
+}
+
+func (bus *EventBus) MustRegister(ev any) {
+	if err := bus.Register(ev); err != nil {
+		panic(err)
+	}
+}
+
 func (s *store) extractEvent(ev any) (EventTag, reflect.Value, error) {
 	evt := elemT(reflect.TypeOf(ev))
 	evv := elemV(reflect.ValueOf(ev))
